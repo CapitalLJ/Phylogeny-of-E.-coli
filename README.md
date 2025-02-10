@@ -49,6 +49,16 @@ python script/rep_strains.py -i test/cluster.tsv -l rep.list -c test/divergent.t
 
 ```
 
+### ClermonTyping 鉴定大肠杆菌类群
+
+参考[Olivier Clermont方法](https://www.microbiologyresearch.org/content/journal/mgen/10.1099/mgen.0.000192)定义大肠杆菌系统发育类群
+
+```shell
+bash clermonTyping.sh --fasta /mnt/d/2024-1-evolution/Es_coli_Shig_40472/epcr/data_db/Esc_coli_00_12_GCF_022131205_1/genome.fna
+# Esc_coli_00_12_GCF_022131205_1  ['trpBA', 'chuA', 'yjaA', 'trpAgpC']    ['-', '+', '+', '-']    ['trpAgpC']     B2      Esc_coli_00_12_GCF_022131205_1_mash_screen.tab
+```
+
+
 
 ### mash、bac120、f88 分析与逻辑斯蒂回归
 
@@ -296,9 +306,14 @@ hnsm similarity --mode jaccard --bin --dis result/value/f88_value.tsv -o result/
 
 ```shell
 # 以mash_distacne.tsv为例
+# 将mash_distacne.tsv转化为n维的矩阵作为输出文件 mash_distance.csv
+# group文件为菌株Clermont分类文件 如下：
+# Esc_coli_00_12_GCF_022131205_1  B2
+# Esc_coli_00_3279_GCF_002741155_1        B1
 
+Rscript 1.R test/mash_distance.csv test/group.tsv output/mash.png  # 层次聚类热图
 
-
+Rscript 2.R test/mash_distance.csv mash mash  # mash为输出文件前缀
 
 
 
