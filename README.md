@@ -316,5 +316,22 @@ Rscript 1.R test/mash_distance.csv test/group.tsv output/mash.png  # 层次聚�
 Rscript 2.R test/mash_distance.csv mash mash  # mash为输出文件前缀
 
 
+```
+
+对得到的类群进行进行比较得到共有类群和分歧类群
+
+```shell
+
+python scrppt/combine.py mash_cluster bac120_cluster f88_cluster  mash_bac120_f88_cluster.tsv
+
+```
+
+使用分类明确的类群进行逻辑斯蒂回归
+
+```shell
+
+# 以志贺氏属为例
+
+
 
 ```
