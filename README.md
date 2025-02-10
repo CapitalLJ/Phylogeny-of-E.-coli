@@ -50,4 +50,256 @@ python script/rep_strains.py -i test/cluster.tsv -l rep.list -c test/divergent.t
 ```
 
 
-###
+### mash、bac120、f88 分析与逻辑斯蒂回归
+
+得到三种基因组分析方法成对基因组间的遗传距离如下：
+
+
+bac120
+
+```shell
+# 输入文件 pro.fa.gz  strains.tsv
+cd /scratch/wangq/llj/Es_coli_Shig_40472
+
+cat tmp_strains.tsv |
+        parallel --colsep '\t' --no-run-if-empty --linebuffer -k -j 1 '
+            gzip -dcf /mnt/d/wangq-date/Bacteria/ASSEMBLY/{2}/{1}/*_protein.faa.gz |
+                grep "^>" |
+                sed "s/^>//" |
+                sed "s/'\''//g" |
+                sed "s/\-\-//g" |
+                perl -nl -e '\'' s/\s+\[.+?\]$//g; print; '\'' |
+                sed "s/MULTISPECIES: //g" |
+                perl -nl -e '\''
+                    /^(\w+)\.(\d+)\s+(.+)$/ or next;
+                    printf qq(%s.%s\t%s\t%s\n), $1, $2, qq({1}), $3;
+                '\'' \
+                >> tmp_detail.tsv
+
+            gzip -dcf /mnt/d/wangq-date/Bacteria/ASSEMBLY/{2}/{1}/*_protein.faa.gz
+        ' |
+        hnsm filter stdin -u |
+        hnsm gz stdin -p 4 -o protein/pro.fa
+
+
+tsv-select -f 1,3 protein/detail.tsv | tsv-uniq | gzip > protein/anno.tsv.gz
+tsv-select -f 1,2 protein/detail.tsv | tsv-uniq | gzip > protein/asmseq.tsv.gz
+rm -f protein/detail.tsv
+
+cd protein
+
+
+mmseqs easy-cluster pro.fa.gz rep tmp --threads 4 --remove-tmp-files -v 0 --min-seq-id 0.95 -c 0.95
+
+hnsm gz rep_rep_seq.fasta -o rep_seq.fa
+
+rm rep_all_seqs.fasta
+rm rep_rep_seq.fasta
+
+
+
+mmseqs easy-cluster rep_seq.fa.gz fam88 tmp --threads 8 --remove-tmp-files -v 0 --min-seq-id 0.8 -c 0.8
+
+rm fam88_all_seqs.fasta
+rm fam88_rep_seq.fasta
+
+mmseqs easy-cluster rep_seq.fa.gz fam38 tmp --threads 8 --remove-tmp-files -v 0 --min-seq-id 0.3 -c 0.8
+
+rm fam38_all_seqs.fasta
+rm fam38_rep_seq.fasta
+
+
+nwr seqdb -d protein/ --init --strain
+
+nwr seqdb -d protein --size <(hnsm size protein/pro.fa.gz) --clust
+
+nwr seqdb -d protein --anno <(gzip -dcf protein/anno.tsv.gz) --asmseq <(gzip -dcf protein/asmseq.tsv.gz)
+nwr seqdb -d protein --rep f1=protein/fam88_cluster.tsv
+nwr seqdb -d protein --rep f2=protein/fam38_cluster.tsv
+
+
+
+
+nwr kb bac120 -o HMM
+
+cp HMM/bac120.lst HMM/marker.lst
+
+mkdir -p Domain
+
+
+cat HMM/marker.lst |
+    parallel --colsep '\t' --no-run-if-empty --linebuffer -k -j 8 "
+        gzip -dcf protein/rep_seq.fa.gz |
+            hmmsearch --cut_nc --noali --notextw HMM/hmm/{}.HMM - |
+            grep '>>' |
+            perl -nl -e ' m(>>\s+(\S+)) and printf qq(%s\t%s\t%s\n), q({}), \$1; '
+    " > protein/bac120.tsv
+
+
+
+nwr seqdb -d protein/ --rep f3=protein/bac120.tsv
+
+
+
+
+
+echo "
+    SELECT
+        seq.name,
+        asm.name,
+        rep.f3
+    FROM asm_seq
+    JOIN rep_seq ON asm_seq.seq_id = rep_seq.seq_id
+    JOIN seq ON asm_seq.seq_id = seq.id
+    JOIN rep ON rep_seq.rep_id = rep.id
+    JOIN asm ON asm_seq.asm_id = asm.id
+    WHERE 1=1
+        AND rep.f3 IS NOT NULL
+    ORDER BY
+        asm.name,
+        rep.f3
+    " |
+    sqlite3 -tabs protein/seq.sqlite \
+    > protein/seq_asm_f3.tsv
+
+
+hnsm some protein/pro.fa.gz <(tsv-select -f 1 protein/seq_asm_f3.tsv | tsv-uniq) | hnsm dedup stdin | hnsm gz stdin -o Domain/bac120.fa
+
+cp protein/seq_asm_f3.tsv Domain/seq_asm_f3.tsv
+
+
+cat HMM/marker.lst |
+    parallel --no-run-if-empty --linebuffer -k -j 4 '
+        echo >&2 "==> marker [{}]"
+
+        mkdir -p Domain/{}
+
+        hnsm some Domain/bac120.fa.gz <(
+            cat Domain/seq_asm_f3.tsv |
+                tsv-filter --str-eq "3:{}" |
+                tsv-select -f 1 |
+                tsv-uniq
+            ) \
+            > Domain/{}/{}.pro.fa
+    '
+
+cat HMM/marker.lst |
+    parallel --no-run-if-empty --linebuffer -k -j 8 '
+        echo >&2 "==> marker [{}]"
+        if [ ! -s Domain/{}/{}.pro.fa ]; then
+            exit
+        fi
+        if [ -s Domain/{}/{}.aln.fa ]; then
+            exit
+        fi
+
+        mafft --auto Domain/{}/{}.pro.fa > Domain/{}/{}.aln.fa
+    '
+
+
+cat HMM/marker.lst |
+while read marker; do
+    echo >&2 "==> marker [${marker}]"
+    if [ ! -s Domain/${marker}/${marker}.pro.fa ]; then
+        continue
+    fi
+
+    # sometimes `muscle` can not produce alignments
+    if [ ! -s Domain/${marker}/${marker}.aln.fa ]; then
+        continue
+    fi
+
+    # Only NR strains
+    # 1 name to many names
+    cat Domain/seq_asm_f3.tsv |
+        tsv-filter --str-eq "3:${marker}" |
+        tsv-select -f 1-2 |
+        hnsm replace -s Domain/${marker}/${marker}.aln.fa stdin \
+        > Domain/${marker}/${marker}.replace.fa
+done
+
+cat HMM/marker.lst |
+while read marker; do
+    if [ ! -s Domain/${marker}/${marker}.pro.fa ]; then
+        continue
+    fi
+    if [ ! -s Domain/${marker}/${marker}.aln.fa ]; then
+        continue
+    fi
+
+    cat Domain/${marker}/${marker}.replace.fa
+
+    # empty line for .fas
+    echo
+done \
+    > Domain/bac120.aln.fas
+
+
+cat Domain/seq_asm_f3.tsv |
+    cut -f 2 |
+    tsv-uniq |
+    sort |
+    fasops concat Domain/bac120.aln.fas stdin -o Domain/bac120.aln.fa
+
+
+
+
+trimal -in Domain/bac120.aln.fa -out Domain/bac120.trim.fa -automated1
+
+FastTree -fastest -noml Domain/bac120.trim.fa > Domain/bac120.trim.newick
+
+```
+
+mash
+
+```shell
+
+mash dist -p 23 all_genome.msh all_genome.msh >> result/mash_distance.tsv
+
+```
+
+f88
+
+```shell
+# fam88
+
+echo "
+    SELECT
+        seq.name,
+        asm.name,
+        rep.f1
+    FROM asm_seq
+    JOIN rep_seq ON asm_seq.seq_id = rep_seq.seq_id
+    JOIN seq ON asm_seq.seq_id = seq.id
+    JOIN rep ON rep_seq.rep_id = rep.id
+    JOIN asm ON asm_seq.asm_id = asm.id
+    WHERE 1=1
+        AND rep.f1 IS NOT NULL
+    ORDER BY
+        asm.name,
+        rep.f1
+    " |
+    sqlite3 -tabs protein/seq.sqlite \
+    > protein/seq_asm_f88.tsv
+
+
+python3 script/famN_value.py -i protein/seq_asm_f88.tsv -o result/value/f88_value.tsv -r protein/f88.list
+
+
+hnsm similarity --mode jaccard --bin --dis result/value/f88_value.tsv -o result/f88_distance.tsv
+
+
+```
+
+
+三种方法进行层次聚类分析：
+
+```shell
+# 以mash_distacne.tsv为例
+
+
+
+
+
+
+```
