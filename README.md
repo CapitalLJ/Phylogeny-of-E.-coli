@@ -332,6 +332,19 @@ python scrppt/combine.py mash_cluster bac120_cluster f88_cluster  mash_bac120_f8
 
 # 以志贺氏属为例
 
+Rscript script/logistic_regression.R combine_phy.tsv test/mash_distance.csv test/bac120_distance.csv test/f88_distance.csv
 
+# combine_phy.tsv 为成对基因组分类关系，0为相同phylogroup，1为不同phylogroup
+# Shig_boy_59_2708_GCF_002949495_1        Shig_boy_600690_GCF_001906135_1 0
+# Shig_boy_59_2708_GCF_002949495_1        Shig_boy_CIP_56_18_GCF_032362635_1      0
+# Shig_boy_59_2708_GCF_002949495_1        Shig_boy_600690_GCF_013394515_1 0
+# Shig_boy_06_3595_GCF_031665755_1        Shig_boy_59_2708_GCF_002949495_1        0
+# Shig_boy_600690_GCF_001906135_1 Shig_boy_CIP_56_18_GCF_032362635_1      0
+# Shig_boy_09_0344_GCF_000815785_1        Shig_flexn_4028STDY6275096_GCF_900486095_1      1
+# Shig_boy_BCW_4868_GCF_001933075_2       Shig_flexn_4028STDY6275096_GCF_900486095_1      1
+# Shig_boy_600690_GCF_013394515_1 Shig_flexn_4028STDY6275096_GCF_900486095_1      1
+# Shig_boy_59_248_GCF_002949475_1 Shig_flexn_4028STDY6275096_GCF_900486095_1      1
+# Shig_boy_NCTC_9850_GCF_002949175_1      Shig_flexn_4028STDY6275096_GCF_900486095_1      1
+# Shig_boy_08_2671_GCF_000815725_1        Shig_flexn_4028STDY6275096_GCF_900486095_1      1
 
 ```
